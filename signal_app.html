@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#ffffff">
+<title>Forex Signal Bot</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;min-height:100vh;}
+.app{max-width:480px;margin:0 auto;padding:0 0 80px;}
+
+/* Header */
+.hdr{background:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #eee;position:sticky;top:0;z-index:10;}
+.hdr-title{font-size:17px;font-weight:600;color:#111;}
+.live{display:flex;align-items:center;gap:5px;font-size:12px;color:#666;}
+.dot{width:8px;height:8px;border-radius:50%;background:#3B6D11;animation:blink 1.2s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.2;}}
+
+/* Pairs */
+.pairs-wrap{background:#fff;padding:12px 16px;border-bottom:1px solid #eee;}
+.pairs-scroll{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none;}
+.pairs-scroll::-webkit-scrollbar{display:none;}
+.pair-btn{flex-shrink:0;padding:7px 14px;border-radius:20px;border:1px solid #ddd;background:#f9f9f9;color:#555;font-size:13px;cursor:pointer;font-weight:500;transition:all .15s;}
+.pair-btn.active{background:#EAF3DE;color:#3B6D11;border-color:#C0DD97;font-weight:600;}
+
+/* Signal Card */
+.signal-wrap{padding:12px 16px;}
+.signal-card{background:#fff;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);overflow:hidden;}
+.card-top{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #f0f0f0;}
+.pair-name{font-size:16px;font-weight:600;color:#111;}
+.price-box{text-align:right;}
+.price-val{font-size:18px;font-weight:600;color:#111;}
+.price-chg{font-size:12px;margin-top:1px;}
+.chg-up{color:#3B6D11;}.chg-dn{color:#A32D2D;}
+
+.signal-body{display:flex;align-items:center;gap:12px;padding:16px;}
+.sig-box{flex:1;border-radius:12px;padding:16px 8px;text-align:center;}
+.sig-up{background:#EAF3DE;}.sig-dn{background:#FCEBEB;}.sig-wait{background:#f5f5f5;}
+.sig-arrow{font-size:36px;line-height:1;}
+.sig-lbl{font-size:14px;font-weight:600;margin-top:6px;}
+.sig-up .sig-lbl{color:#3B6D11;}.sig-dn .sig-lbl{color:#A32D2D;}.sig-wait .sig-lbl{color:#888;}
+
+.conf-area{flex:1.3;}
+.conf-lbl{font-size:11px;color:#888;margin-bottom:5px;}
+.conf-track{background:#eee;border-radius:6px;height:10px;overflow:hidden;margin-bottom:6px;}
+.conf-fill{height:100%;border-radius:6px;transition:width .5s;}
+.conf-val{font-size:16px;font-weight:600;color:#111;}
+.conf-meta{font-size:11px;color:#888;margin-top:5px;line-height:1.4;}
+
+/* Indicators */
+.ind-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:0 16px 16px;}
+.ind{background:#f9f9f9;border-radius:10px;padding:10px 6px;text-align:center;}
+.ind-name{font-size:10px;color:#888;margin-bottom:3px;}
+.ind-val{font-size:13px;font-weight:600;color:#111;}
+.ind-tag{font-size:10px;margin-top:2px;}
+.bull{color:#3B6D11;}.bear{color:#A32D2D;}.neu{color:#888;}
+
+/* Timer */
+.timer-row{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#f9f9f9;border-top:1px solid #f0f0f0;}
+.timer-lbl{font-size:12px;color:#888;}
+.timer-val{font-size:15px;font-weight:600;color:#111;}
+
+/* History */
+.hist-wrap{padding:0 16px;}
+.hist-card{background:#fff;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);overflow:hidden;}
+.hist-hdr{padding:12px 16px;border-bottom:1px solid #f0f0f0;}
+.hist-title{font-size:15px;font-weight:600;color:#111;}
+.hist-row{display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid #f0f0f0;font-size:13px;}
+.hist-row:last-child{border-bottom:none;}
+.ht{color:#888;width:42px;font-size:12px;}
+.ha{flex:1;color:#111;font-weight:500;}
+.hs{padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;}
+.hs-up{background:#EAF3DE;color:#3B6D11;}.hs-dn{background:#FCEBEB;color:#A32D2D;}
+.hc{color:#888;font-size:12px;min-width:34px;text-align:right;}
+.no-sig{padding:20px;text-align:center;color:#888;font-size:13px;}
+
+/* Bottom Button */
+.bottom-bar{position:fixed;bottom:0;left:0;right:0;background:#fff;padding:12px 16px;border-top:1px solid #eee;max-width:480px;margin:0 auto;}
+.refresh-btn{width:100%;padding:14px;border-radius:12px;border:none;background:#3B6D11;color:#fff;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;}
+.refresh-btn:active{opacity:.85;}
+
+/* Error */
+.err-box{margin:12px 16px;padding:12px;background:#FAEEDA;border-radius:12px;font-size:13px;color:#633806;line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="hdr">
+    <span class="hdr-title">📊 Forex Signal Bot</span>
+    <div class="live"><div class="dot"></div><span id="statusTxt">Connecting...</span></div>
+  </div>
+
+  <div class="pairs-wrap">
+    <div class="pairs-scroll" id="pairsScroll">
+      <button class="pair-btn active" onclick="selectPair(this,'EUR/USD')">EUR/USD</button>
+      <button class="pair-btn" onclick="selectPair(this,'GBP/USD')">GBP/USD</button>
+      <button class="pair-btn" onclick="selectPair(this,'USD/JPY')">USD/JPY</button>
+      <button class="pair-btn" onclick="selectPair(this,'AUD/USD')">AUD/USD</button>
+      <button class="pair-btn" onclick="selectPair(this,'USD/CAD')">USD/CAD</button>
+      <button class="pair-btn" onclick="selectPair(this,'EUR/GBP')">EUR/GBP</button>
+      <button class="pair-btn" onclick="selectPair(this,'GBP/JPY')">GBP/JPY</button>
+      <button class="pair-btn" onclick="selectPair(this,'EUR/JPY')">EUR/JPY</button>
+    </div>
+  </div>
+
+  <div id="errBox" class="err-box" style="display:none;"></div>
+
+  <div class="signal-wrap">
+    <div class="signal-card">
+      <div class="card-top">
+        <span class="pair-name" id="pairName">EUR/USD</span>
+        <div class="price-box">
+          <div class="price-val" id="priceVal">—</div>
+          <div class="price-chg" id="priceChg"></div>
+        </div>
+      </div>
+      <div class="signal-body">
+        <div class="sig-box sig-wait" id="sigBox">
+          <div class="sig-arrow" id="sigArrow">⟳</div>
+          <div class="sig-lbl" id="sigLbl">Loading...</div>
+        </div>
+        <div class="conf-area">
+          <div class="conf-lbl">Signal strength</div>
+          <div class="conf-track"><div class="conf-fill" id="confFill" style="width:0%;"></div></div>
+          <div class="conf-val" id="confVal">—</div>
+          <div class="conf-meta" id="confMeta">1 minute candle</div>
+        </div>
+      </div>
+      <div class="ind-grid" id="indGrid">
+        <div class="ind"><div class="ind-name">RSI</div><div class="ind-val">—</div><div class="ind-tag neu">—</div></div>
+        <div class="ind"><div class="ind-name">Stoch</div><div class="ind-val">—</div><div class="ind-tag neu">—</div></div>
+        <div class="ind"><div class="ind-name">MA(20)</div><div class="ind-val">—</div><div class="ind-tag neu">—</div></div>
+        <div class="ind"><div class="ind-name">Pattern</div><div class="ind-val" style="font-size:10px;">—</div><div class="ind-tag neu">—</div></div>
+      </div>
+      <div class="timer-row">
+        <span class="timer-lbl">⏱ Next signal</span>
+        <span class="timer-val" id="timerVal">—</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="hist-wrap" style="margin-top:12px;">
+    <div class="hist-card">
+      <div class="hist-hdr"><div class="hist-title">📋 Signal History</div></div>
+      <div id="histList"><div class="no-sig">Abhi koi signal nahi</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="bottom-bar">
+  <button class="refresh-btn" onclick="fetchSignal()">
+    🔄 Signal Refresh Karo
+  </button>
+</div>
+
+<script>
+const API_KEY = '582ab9503eef4232886aa5b96b5fc7de';
+let currentPair = 'EUR/USD';
+let history = [];
+let timerInt = null;
+let timerSec = 60;
+let prevPrice = 0;
+
+function selectPair(btn, pair) {
+  document.querySelectorAll('.pair-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentPair = pair;
+  prevPrice = 0;
+  document.getElementById('pairName').textContent = pair;
+  document.getElementById('priceVal').textContent = '—';
+  document.getElementById('priceChg').textContent = '';
+  document.getElementById('sigBox').className = 'sig-box sig-wait';
+  document.getElementById('sigArrow').textContent = '⟳';
+  document.getElementById('sigLbl').textContent = 'Loading...';
+  document.getElementById('confVal').textContent = '—';
+  fetchSignal();
+}
+
+async function fetchCandles(pair) {
+  const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(pair)}&interval=1min&outputsize=50&apikey=${API_KEY}`;
+  const r = await fetch(url);
+  const data = await r.json();
+  if (data.status === 'error') throw new Error(data.message);
+  return (data.values || []).reverse().map(v => ({
+    open: parseFloat(v.open), high: parseFloat(v.high),
+    low: parseFloat(v.low), close: parseFloat(v.close)
+  }));
+}
+
+function calcRSI(closes, p=14) {
+  if (closes.length < p+1) return 50;
+  let g=0, l=0;
+  for (let i=closes.length-p; i<closes.length; i++) {
+    const d = closes[i]-closes[i-1];
+    if (d>0) g+=d; else l+=Math.abs(d);
+  }
+  const ag=g/p, al=l/p;
+  if (al===0) return 100;
+  return parseFloat((100-100/(1+ag/al)).toFixed(1));
+}
+
+function calcMA(closes, p=20) {
+  if (closes.length < p) return closes[closes.length-1];
+  return closes.slice(-p).reduce((a,b)=>a+b,0)/p;
+}
+
+function calcStoch(candles, k=14) {
+  if (candles.length < k) return 50;
+  const sl = candles.slice(-k);
+  const hi = Math.max(...sl.map(c=>c.high));
+  const lo = Math.min(...sl.map(c=>c.low));
+  const last = sl[sl.length-1].close;
+  if (hi===lo) return 50;
+  return parseFloat(((last-lo)/(hi-lo)*100).toFixed(1));
+}
+
+function detectPattern(candles) {
+  const c = candles[candles.length-1];
+  const p = candles[candles.length-2];
+  const body = Math.abs(c.close-c.open);
+  const rng = c.high-c.low || 0.0001;
+  const bull = c.close > c.open;
+  if (body/rng < 0.1) return {name:'Doji', bias:'neu'};
+  if (p) {
+    const pb = p.close > p.open;
+    if (!pb && bull && c.open<=p.close && c.close>=p.open) return {name:'Bull Engulf', bias:'bull'};
+    if (pb && !bull && c.open>=p.close && c.close<=p.open) return {name:'Bear Engulf', bias:'bear'};
+  }
+  const lo = (bull?c.open:c.close)-c.low;
+  const up = c.high-(bull?c.close:c.open);
+  if (lo>body*2 && up<body*0.5) return {name:bull?'Hammer':'Hang Man', bias:bull?'bull':'bear'};
+  if (up>body*2 && lo<body*0.5) return {name:bull?'Inv Hammer':'Shoot Star', bias:bull?'neu':'bear'};
+  return {name:bull?'Green Candle':'Red Candle', bias:bull?'bull':'bear'};
+}
+
+function analyze(candles) {
+  const closes = candles.map(c=>c.close);
+  const rsi = calcRSI(closes);
+  const ma = calcMA(closes);
+  const stoch = calcStoch(candles);
+  const pattern = detectPattern(candles);
+  const price = candles[candles.length-1].close;
+  let bull=0, bear=0;
+  if (rsi<30) bull+=3; else if (rsi<45) bull+=1; else if (rsi>70) bear+=3; else if (rsi>55) bear+=1;
+  if (price>ma) bull+=2; else bear+=2;
+  if (stoch<20) bull+=2; else if (stoch<40) bull+=1; else if (stoch>80) bear+=2; else if (stoch>60) bear+=1;
+  if (pattern.bias==='bull') bull+=2; else if (pattern.bias==='bear') bear+=2;
+  if (closes.length>=4) { if (closes[closes.length-1]>closes[closes.length-4]) bull+=1; else bear+=1; }
+  const dir = bull>=bear ? 'UP' : 'DOWN';
+  const total = bull+bear;
+  const conf = Math.min(93, Math.max(53, total>0 ? Math.round(Math.max(bull,bear)/total*100) : 50));
+  return {dir, conf, rsi, stoch, ma, pattern, price};
+}
+
+function fmtPrice(p) { return p > 100 ? p.toFixed(3) : p.toFixed(5); }
+
+function addHist(pair, dir, conf) {
+  const now = new Date();
+  const t = now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0');
+  history.unshift({t, pair, dir, conf});
+  if (history.length > 8) history.pop();
+  document.getElementById('histList').innerHTML = history.map(h => `
+    <div class="hist-row">
+      <span class="ht">${h.t}</span>
+      <span class="ha">${h.pair}</span>
+      <span class="hs ${h.dir==='UP'?'hs-up':'hs-dn'}">${h.dir==='UP'?'⬆ UP':'⬇ DOWN'}</span>
+      <span class="hc">${h.conf}%</span>
+    </div>`).join('');
+}
+
+function renderSignal(a) {
+  const ps = fmtPrice(a.price);
+  const chg = prevPrice ? a.price - prevPrice : 0;
+  const chgStr = prevPrice ? (chg>=0?'+':'')+fmtPrice(Math.abs(chg)) : '';
+  document.getElementById('priceVal').textContent = ps;
+  const chgEl = document.getElementById('priceChg');
+  chgEl.textContent = chgStr;
+  chgEl.className = 'price-chg '+(chg>=0?'chg-up':'chg-dn');
+  const box = document.getElementById('sigBox');
+  box.className = 'sig-box '+(a.dir==='UP'?'sig-up':'sig-dn');
+  document.getElementById('sigArrow').textContent = a.dir==='UP'?'⬆':'⬇';
+  document.getElementById('sigLbl').textContent = a.dir==='UP'?'BUY / UP':'SELL / DOWN';
+  const confColor = a.conf>=75?'#3B6D11':a.conf>=65?'#BA7517':'#E24B4A';
+  const fill = document.getElementById('confFill');
+  fill.style.width = a.conf+'%';
+  fill.style.background = confColor;
+  document.getElementById('confVal').textContent = a.conf+'% confidence';
+  const strength = a.conf>=75?'Strong 💪':a.conf>=65?'Medium 👍':'Weak ⚠️';
+  document.getElementById('confMeta').textContent = strength+' | 1 min candle';
+  const rsiTag = a.rsi<30?'Oversold':a.rsi>70?'Overbought':'Neutral';
+  const rsiC = a.rsi<30?'bull':a.rsi>70?'bear':'neu';
+  const stTag = a.stoch<20?'Oversold':a.stoch>80?'Overbought':'Neutral';
+  const stC = a.stoch<20?'bull':a.stoch>80?'bear':'neu';
+  const maC = a.price>a.ma?'bull':'bear';
+  const patC = a.pattern.bias==='bull'?'bull':a.pattern.bias==='bear'?'bear':'neu';
+  document.getElementById('indGrid').innerHTML = `
+    <div class="ind"><div class="ind-name">RSI (14)</div><div class="ind-val">${a.rsi}</div><div class="ind-tag ${rsiC}">${rsiTag}</div></div>
+    <div class="ind"><div class="ind-name">Stoch</div><div class="ind-val">${a.stoch}</div><div class="ind-tag ${stC}">${stTag}</div></div>
+    <div class="ind"><div class="ind-name">MA(20)</div><div class="ind-val">${a.price>a.ma?'Above':'Below'}</div><div class="ind-tag ${maC}">${maC==='bull'?'Bullish':'Bearish'}</div></div>
+    <div class="ind"><div class="ind-name">Pattern</div><div class="ind-val" style="font-size:10px;">${a.pattern.name}</div><div class="ind-tag ${patC}">${patC==='bull'?'Bullish':patC==='bear'?'Bearish':'Neutral'}</div></div>
+  `;
+  document.getElementById('statusTxt').textContent = 'Live';
+  document.getElementById('errBox').style.display = 'none';
+  addHist(currentPair, a.dir, a.conf);
+}
+
+function startTimer() {
+  if (timerInt) clearInterval(timerInt);
+  const now = new Date();
+  timerSec = 60 - now.getSeconds() - 3;
+  if (timerSec < 0) timerSec = 60 + timerSec;
+  timerInt = setInterval(() => {
+    timerSec--;
+    const m = Math.floor(timerSec/60).toString().padStart(2,'0');
+    const s = (timerSec%60).toString().padStart(2,'0');
+    document.getElementById('timerVal').textContent = m+':'+s;
+    if (timerSec <= 0) { fetchSignal(); timerSec = 60; }
+  }, 1000);
+}
+
+async function fetchSignal() {
+  document.getElementById('statusTxt').textContent = 'Fetching...';
+  try {
+    const candles = await fetchCandles(currentPair);
+    if (candles.length < 20) throw new Error('Data kam hai');
+    prevPrice = candles[candles.length-2]?.close || 0;
+    const a = analyze(candles);
+    renderSignal(a);
+    startTimer();
+  } catch(e) {
+    document.getElementById('statusTxt').textContent = 'Error';
+    const errBox = document.getElementById('errBox');
+    errBox.style.display = 'block';
+    errBox.textContent = '⚠️ Data load nahi hua: '+e.message;
+  }
+}
+
+fetchSignal();
+</script>
+</body>
+</html>
