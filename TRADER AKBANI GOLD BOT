@@ -1,0 +1,456 @@
+import requests
+import time
+from datetime import datetime, timedelta
+
+TOKEN = "8391802005:AAGJXOwrRroB5cqi8AAfAtpyd07gcMqypbM"
+CHAT_ID = "5855946122"
+POLYGON_KEY = "UNEpxTpczNT2n27RD62Pj_EjCF3BrJpL"
+
+# ===== APNA BALANCE YAHAN DAALO =====
+ACCOUNT_BALANCE = 1000
+RISK_PERCENT = 1.2
+# ====================================
+
+PROXIES_LIST = [
+    {"http": "socks5h://127.0.0.1:60000", "https": "socks5h://127.0.0.1:60000"},
+    {"http": "socks5h://127.0.0.1:1080",  "https": "socks5h://127.0.0.1:1080"},
+    {"http": "http://127.0.0.1:8080",     "https": "http://127.0.0.1:8080"},
+    None
+]
+
+working_proxy = None
+active_trade = None  # Sirf ek Gold trade track
+
+def send_message(text, proxy=None):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    data = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}
+    try:
+        r = requests.post(url, data=data, timeout=8, proxies=proxy)
+        return r.status_code == 200
+    except:
+        return False
+
+def send_with_retry(text):
+    global working_proxy
+    if working_proxy is not None:
+        if send_message(text, working_proxy):
+            return True
+    for proxy in PROXIES_LIST:
+        if send_message(text, proxy):
+            working_proxy = proxy
+            return True
+    return False
+
+def get_gold_candles(limit=100):
+    try:
+        end = datetime.utcnow()
+        start = end - timedelta(hours=12)
+        url = f"https://api.polygon.io/v2/aggs/ticker/C:XAUUSD/range/5/minute/{start.strftime('%Y-%m-%d')}/{end.strftime('%Y-%m-%d')}"
+        params = {"adjusted": "true", "sort": "asc", "limit": limit, "apiKey": POLYGON_KEY}
+        r = requests.get(url, params=params, timeout=12)
+        data = r.json()
+        if data.get("resultsCount", 0) == 0:
+            print(f"Polygon: {data.get('error', 'No data')}")
+            return []
+        return [{"open": k["o"], "high": k["h"], "low": k["l"], "close": k["c"]} for k in data["results"]]
+    except Exception as e:
+        print(f"Gold data error: {e}")
+        return []
+
+def calc_rsi(closes, p=14):
+    if len(closes) < p+1: return 50
+    g = l = 0
+    for i in range(len(closes)-p, len(closes)):
+        d = closes[i]-closes[i-1]
+        if d > 0: g += d
+        else: l += abs(d)
+    ag, al = g/p, l/p
+    if al == 0: return 100
+    return round(100-100/(1+ag/al), 1)
+
+def calc_ma(closes, p=20):
+    if len(closes) < p: return closes[-1]
+    return round(sum(closes[-p:])/p, 2)
+
+def calc_ema(closes, p=9):
+    if len(closes) < p: return closes[-1]
+    k = 2/(p+1)
+    ema = sum(closes[:p])/p
+    for price in closes[p:]:
+        ema = price*k + ema*(1-k)
+    return round(ema, 2)
+
+def calc_stoch(candles, k=14):
+    if len(candles) < k: return 50
+    sl = candles[-k:]
+    hi = max(c["high"] for c in sl)
+    lo = min(c["low"] for c in sl)
+    last = sl[-1]["close"]
+    if hi == lo: return 50
+    return round((last-lo)/(hi-lo)*100, 1)
+
+def calc_atr(candles, p=14):
+    if len(candles) < p+1: return 2.0
+    trs = []
+    for i in range(1, len(candles)):
+        c = candles[i]; prev = candles[i-1]
+        tr = max(c["high"]-c["low"], abs(c["high"]-prev["close"]), abs(c["low"]-prev["close"]))
+        trs.append(tr)
+    return round(sum(trs[-p:])/p, 2)
+
+def calc_support_resistance(candles, lookback=20):
+    recent = candles[-lookback:]
+    resistance = round(max(c["high"] for c in recent), 2)
+    support = round(min(c["low"] for c in recent), 2)
+    return support, resistance
+
+def detect_pattern(candles):
+    c = candles[-1]; p = candles[-2] if len(candles) >= 2 else None
+    body = abs(c["close"]-c["open"]); rng = c["high"]-c["low"] or 0.0001
+    bull = c["close"] > c["open"]
+    if body/rng < 0.1: return "Doji", "neu"
+    if p:
+        pb = p["close"] > p["open"]
+        if not pb and bull and c["open"] <= p["close"] and c["close"] >= p["open"]:
+            return "Bullish Engulfing", "bull"
+        if pb and not bull and c["open"] >= p["close"] and c["close"] <= p["open"]:
+            return "Bearish Engulfing", "bear"
+    lo = (c["open"] if bull else c["close"])-c["low"]
+    up = c["high"]-(c["close"] if bull else c["open"])
+    if lo > body*2 and up < body*0.5: return ("Hammer","bull") if bull else ("Hanging Man","bear")
+    if up > body*2 and lo < body*0.5: return ("Inv Hammer","neu") if bull else ("Shooting Star","bear")
+    return ("Green Candle","bull") if bull else ("Red Candle","bear")
+
+def analyze(candles):
+    closes = [c["close"] for c in candles]
+    rsi = calc_rsi(closes)
+    ma20 = calc_ma(closes, 20)
+    ma50 = calc_ma(closes, 50)
+    ema9 = calc_ema(closes, 9)
+    stoch = calc_stoch(candles)
+    atr = calc_atr(candles)
+    pat, bias = detect_pattern(candles)
+    support, resistance = calc_support_resistance(candles)
+    price = round(candles[-1]["close"], 2)
+
+    bull = bear = 0
+    if rsi < 30: bull += 3
+    elif rsi < 45: bull += 1
+    elif rsi > 70: bear += 3
+    elif rsi > 55: bear += 1
+    if price > ma20: bull += 2
+    else: bear += 2
+    if ma20 > ma50: bull += 1
+    else: bear += 1
+    if price > ema9: bull += 1
+    else: bear += 1
+    if stoch < 20: bull += 2
+    elif stoch < 40: bull += 1
+    elif stoch > 80: bear += 2
+    elif stoch > 60: bear += 1
+    if bias == "bull": bull += 2
+    elif bias == "bear": bear += 2
+    if len(closes) >= 5:
+        if closes[-1] > closes[-5]: bull += 1
+        else: bear += 1
+
+    d = "UP" if bull >= bear else "DOWN"
+    t = bull+bear
+    conf = min(93, max(53, round(max(bull,bear)/t*100) if t > 0 else 50))
+
+    # Confidence level label
+    if conf >= 80:
+        conf_label = "🔥 VERY STRONG"
+    elif conf >= 70:
+        conf_label = "💪 STRONG"
+    elif conf >= 65:
+        conf_label = "👍 MEDIUM"
+    else:
+        conf_label = "⚠️ WEAK"
+
+    return {
+        "direction": d, "confidence": conf, "conf_label": conf_label,
+        "rsi": rsi, "stoch": stoch, "ma20": ma20, "ma50": ma50,
+        "ema9": ema9, "atr": atr, "pattern": pat, "bias": bias,
+        "price": price, "support": support, "resistance": resistance
+    }
+
+def calculate_trade(direction, entry, atr):
+    sl_mult = 1.5
+    tp1_mult = 1.5   # TP1 — partial profit
+    tp2_mult = 2.5   # TP2 — full profit
+    tp3_mult = 4.0   # TP3 — maximum profit
+
+    if direction == "UP":
+        sl  = round(entry - (atr * sl_mult), 2)
+        tp1 = round(entry + (atr * tp1_mult), 2)
+        tp2 = round(entry + (atr * tp2_mult), 2)
+        tp3 = round(entry + (atr * tp3_mult), 2)
+    else:
+        sl  = round(entry + (atr * sl_mult), 2)
+        tp1 = round(entry - (atr * tp1_mult), 2)
+        tp2 = round(entry - (atr * tp2_mult), 2)
+        tp3 = round(entry - (atr * tp3_mult), 2)
+
+    sl_distance = abs(entry - sl)
+    risk_amount = round(ACCOUNT_BALANCE * (RISK_PERCENT / 100), 2)
+
+    # Gold lot size
+    lot_size = round(risk_amount / (sl_distance * 100), 2)
+    lot_size = max(0.01, min(lot_size, 10.0))
+
+    rr2 = round(abs(tp2-entry)/abs(sl-entry), 2)
+
+    return {
+        "entry": entry,
+        "sl": sl,
+        "tp1": tp1,
+        "tp2": tp2,
+        "tp3": tp3,
+        "lot": lot_size,
+        "risk_amount": risk_amount,
+        "sl_distance": round(sl_distance, 2),
+        "rr": rr2
+    }
+
+def manage_trade(trade, current_price, rsi, stoch):
+    direction = trade["direction"]
+    entry = trade["entry"]
+    sl = trade["sl"]
+    tp1 = trade["tp1"]
+    tp2 = trade["tp2"]
+
+    if direction == "UP":
+        pnl = round(current_price - entry, 2)
+        progress = round((current_price - entry) / (tp2 - entry) * 100, 1) if tp2 != entry else 0
+        sl_hit = current_price <= sl
+        tp1_hit = current_price >= tp1
+        tp2_hit = current_price >= tp2
+    else:
+        pnl = round(entry - current_price, 2)
+        progress = round((entry - current_price) / (entry - tp2) * 100, 1) if entry != tp2 else 0
+        sl_hit = current_price >= sl
+        tp1_hit = current_price <= tp1
+        tp2_hit = current_price <= tp2
+
+    # Reversal check
+    reversal = False
+    if direction == "UP" and rsi > 72 and stoch > 80:
+        reversal = True
+    if direction == "DOWN" and rsi < 28 and stoch < 20:
+        reversal = True
+
+    # Breakeven move
+    move_be = progress >= 50 and not trade.get("be_moved", False)
+
+    return {
+        "pnl": pnl,
+        "progress": max(0, min(100, progress)),
+        "sl_hit": sl_hit,
+        "tp1_hit": tp1_hit,
+        "tp2_hit": tp2_hit,
+        "reversal": reversal,
+        "move_be": move_be,
+        "current": current_price
+    }
+
+def send_new_signal(a, trade):
+    arrow = "⬆️ BUY" if a["direction"]=="UP" else "⬇️ SELL"
+    now = datetime.now().strftime("%H:%M:%S")
+    rsi_tag = "Oversold 🟢" if a["rsi"]<30 else "Overbought 🔴" if a["rsi"]>70 else "Neutral ⚪"
+    st_tag = "Oversold 🟢" if a["stoch"]<20 else "Overbought 🔴" if a["stoch"]>80 else "Neutral ⚪"
+
+    msg = f"""🥇 <b>GOLD SIGNAL — XAU/USD</b>
+━━━━━━━━━━━━━━━━━━━
+{arrow} | ⏱ 5 Min | 🕐 {now}
+
+🎯 <b>CONFIDENCE: {a["confidence"]}% {a["conf_label"]}</b>
+
+💰 <b>TRADE SETUP:</b>
+📍 Entry:         <b>{trade["entry"]:.2f}</b>
+🔴 Stop Loss:     <b>{trade["sl"]:.2f}</b> (-{trade["sl_distance"]:.2f})
+🟡 Take Profit 1: <b>{trade["tp1"]:.2f}</b>
+🟢 Take Profit 2: <b>{trade["tp2"]:.2f}</b>
+🚀 Take Profit 3: <b>{trade["tp3"]:.2f}</b>
+📦 Lot Size:      <b>{trade["lot"]}</b>
+💸 Risk Amount:   <b>${trade["risk_amount"]}</b> ({RISK_PERCENT}%)
+⚖️ R:R Ratio:     <b>1:{trade["rr"]}</b>
+
+📊 <b>INDICATORS:</b>
+• RSI (14):  <b>{a["rsi"]}</b> — {rsi_tag}
+• Stoch:     <b>{a["stoch"]}</b> — {st_tag}
+• MA20:      <b>{a["ma20"]}</b> {"✅ Above" if a["price"]>a["ma20"] else "❌ Below"}
+• MA50:      <b>{a["ma50"]}</b> {"✅ Above" if a["price"]>a["ma50"] else "❌ Below"}
+• EMA9:      <b>{a["ema9"]}</b> {"✅ Above" if a["price"]>a["ema9"] else "❌ Below"}
+• ATR:       <b>{a["atr"]}</b>
+• Pattern:   <b>{a["pattern"]}</b>
+
+📐 <b>LEVELS:</b>
+🔵 Support:    <b>{a["support"]:.2f}</b>
+🔴 Resistance: <b>{a["resistance"]:.2f}</b>
+━━━━━━━━━━━━━━━━━━━
+⚠️ SL zaroor lagao! Max risk {RISK_PERCENT}%"""
+
+    send_with_retry(msg)
+    print(msg)
+
+def send_trade_update(trade_info, mgmt):
+    direction = trade_info["direction"]
+    arrow = "⬆️" if direction=="UP" else "⬇️"
+    pnl_emoji = "📈" if mgmt["pnl"] >= 0 else "📉"
+    now = datetime.now().strftime("%H:%M:%S")
+
+    if mgmt["sl_hit"]:
+        msg = f"""❌ <b>STOP LOSS HIT — XAU/USD</b>
+━━━━━━━━━━━━━━━━━━━
+{arrow} {direction} Trade Closed | {now}
+💸 Loss: <b>{mgmt["pnl"]:.2f}</b> pips
+📌 Risk manage hua — {RISK_PERCENT}% loss
+━━━━━━━━━━━━━━━━━━━
+Next signal ka wait karo 🕐"""
+        send_with_retry(msg)
+        return "CLOSED"
+
+    if mgmt["tp2_hit"]:
+        msg = f"""✅ <b>TAKE PROFIT 2 HIT — XAU/USD</b>
+━━━━━━━━━━━━━━━━━━━
+{arrow} {direction} | {now}
+💰 Profit: <b>+{mgmt["pnl"]:.2f}</b> pips 🎉
+━━━━━━━━━━━━━━━━━━━
+Excellent trade! 🥇"""
+        send_with_retry(msg)
+        return "CLOSED"
+
+    if mgmt["tp1_hit"] and not trade_info.get("tp1_notified"):
+        msg = f"""🟡 <b>TAKE PROFIT 1 HIT — XAU/USD</b>
+━━━━━━━━━━━━━━━━━━━
+{arrow} {direction} | {now}
+💰 Partial Profit: <b>+{mgmt["pnl"]:.2f}</b>
+✅ 50% position close karo
+🔄 Baqi TP2 ke liye hold karo
+🛡️ SL → Breakeven pe move karo: <b>{trade_info["entry"]:.2f}</b>
+━━━━━━━━━━━━━━━━━━━"""
+        send_with_retry(msg)
+        return "TP1_HIT"
+
+    # Regular update
+    progress_bar = "█" * int(mgmt["progress"]//10) + "░" * (10 - int(mgmt["progress"]//10))
+    extra = ""
+    if mgmt["reversal"]:
+        extra = "\n\n⚠️ <b>REVERSAL SIGNAL — EXIT CONSIDER KARO!</b>\nClose karke next signal ka wait karo"
+    elif mgmt["move_be"]:
+        extra = f"\n\n✅ <b>BREAKEVEN PE MOVE KARO!</b>\nSL → Entry: <b>{trade_info['entry']:.2f}</b>\n(Ab free trade — koi risk nahi!)"
+
+    msg = f"""📊 <b>TRADE UPDATE — XAU/USD</b>
+━━━━━━━━━━━━━━━━━━━
+{arrow} {direction} | {now}
+{pnl_emoji} P&L: <b>{mgmt["pnl"]:+.2f}</b>
+
+📍 Entry:   {trade_info["entry"]:.2f}
+📌 Current: <b>{mgmt["current"]:.2f}</b>
+🔴 SL:      {trade_info["sl"]:.2f}
+🟢 TP2:     {trade_info["tp2"]:.2f}
+
+Progress: [{progress_bar}] {mgmt["progress"]:.0f}%{extra}
+━━━━━━━━━━━━━━━━━━━
+🔴 CLOSE karo: SL hit hone se pehle exit
+✅ HOLD karo: Trend strong hai"""
+
+    send_with_retry(msg)
+    return "ACTIVE"
+
+def run_bot():
+    global active_trade
+    INTERVAL_SEC = 5 * 60
+
+    print("="*50)
+    print("  🥇 GOLD Signal Bot — Full Management")
+    print(f"  Balance: ${ACCOUNT_BALANCE} | Risk: {RISK_PERCENT}%")
+    print("  Pair: XAU/USD | Timeframe: 5 Min")
+    print("="*50)
+
+    send_with_retry(
+        f"🥇 <b>Gold Signal Bot Started!</b>\n\n"
+        f"💰 Balance: <b>${ACCOUNT_BALANCE}</b>\n"
+        f"⚠️ Risk: <b>{RISK_PERCENT}%</b> per trade\n"
+        f"⏱ Timeframe: <b>5 Minutes</b>\n"
+        f"📊 API: <b>Polygon.io</b>\n\n"
+        f"✅ Milega:\n"
+        f"• Entry + SL + TP1/TP2/TP3\n"
+        f"• Lot Size + Risk Amount\n"
+        f"• Confidence Level\n"
+        f"• Trade Management (Hold/Close)\n"
+        f"• Breakeven alerts\n"
+        f"• Reversal warnings"
+    )
+
+    while True:
+        try:
+            now = datetime.now()
+            total_sec = now.minute * 60 + now.second
+            remainder = total_sec % INTERVAL_SEC
+            if remainder <= (INTERVAL_SEC - 10):
+                wait = (INTERVAL_SEC - 10) - remainder
+            else:
+                wait = INTERVAL_SEC - remainder + (INTERVAL_SEC - 10)
+
+            print(f"\n⏳ {now.strftime('%H:%M:%S')} — {wait}s mein next candle...")
+            time.sleep(wait)
+
+            print(f"\n🔄 {datetime.now().strftime('%H:%M:%S')} — Gold data fetch...")
+            candles = get_gold_candles()
+
+            if len(candles) < 20:
+                print("❌ Data nahi mila — retry...")
+                time.sleep(10)
+                continue
+
+            a = analyze(candles)
+            current_price = a["price"]
+            print(f"💰 XAU/USD: {current_price} | {a['direction']} | {a['confidence']}% {a['conf_label']}")
+
+            # Active trade manage karo
+            if active_trade is not None:
+                mgmt = manage_trade(active_trade, current_price, a["rsi"], a["stoch"])
+                result = send_trade_update(active_trade, mgmt)
+
+                if result == "CLOSED":
+                    active_trade = None
+                    print("Trade closed — next signal ka wait...")
+                elif result == "TP1_HIT":
+                    active_trade["tp1_notified"] = True
+                elif result == "ACTIVE":
+                    if mgmt["move_be"]:
+                        active_trade["be_moved"] = True
+                    print(f"  Trade active | P&L: {mgmt['pnl']:+.2f} | Progress: {mgmt['progress']}%")
+                continue
+
+            # New signal — sirf 70%+ pe
+            if a["confidence"] >= 70:
+                trade = calculate_trade(a["direction"], current_price, a["atr"])
+                active_trade = {
+                    "direction": a["direction"],
+                    "entry": current_price,
+                    "sl": trade["sl"],
+                    "tp1": trade["tp1"],
+                    "tp2": trade["tp2"],
+                    "tp3": trade["tp3"],
+                    "lot": trade["lot"],
+                    "tp1_notified": False,
+                    "be_moved": False,
+                    "time": datetime.now().strftime("%H:%M:%S")
+                }
+                send_new_signal(a, trade)
+            else:
+                print(f"⏭️ Signal weak ({a['confidence']}%) — Skip")
+
+        except KeyboardInterrupt:
+            print("\nBot band ho raha hai...")
+            send_with_retry("🔴 Gold Bot band ho gaya.")
+            break
+        except Exception as e:
+            print(f"Error: {e}")
+            time.sleep(15)
+
+if __name__ == "__main__":
+    run_bot()
